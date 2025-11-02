@@ -17,6 +17,7 @@ import androidx.work.OneTimeWorkRequest
 import androidx.work.WorkManager
 import com.example.lab_week_08.worker.FirstWorker
 import com.example.lab_week_08.worker.SecondWorker
+import com.example.lab_week_08.worker.ThirdWorker
 
 class MainActivity : AppCompatActivity() {
 
@@ -42,8 +43,7 @@ class MainActivity : AppCompatActivity() {
             insets
         }
 
-        // First, let's request for notification permission (required for
-        // Android 13 (API 33) and above) Add the code below inside onCreate.
+        // Request izin notifikasi (API 33+)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) !=
                 PackageManager.PERMISSION_GRANTED
@@ -53,16 +53,12 @@ class MainActivity : AppCompatActivity() {
         }
 
         //Create a constraint of which your workers are bound to.
-        //Here the workers cannot execute the given process if
-        //there's no internet connection
         val networkConstraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
             .build()
 
         val id = "001"
 
-        //Create a one time work request that includes
-        //all the constraints and inputs needed for the worker
         //This request is created for the FirstWorker class
         val firstRequest = OneTimeWorkRequest
             .Builder(FirstWorker::class.java)
@@ -85,15 +81,26 @@ class MainActivity : AppCompatActivity() {
             )
             .build()
 
+        // TAMBAHAN: Request untuk ThirdWorker
+        val thirdRequest = OneTimeWorkRequest
+            .Builder(ThirdWorker::class.java)
+            .setConstraints(networkConstraints)
+            .setInputData(
+                getIdInputData(
+                    ThirdWorker.INPUT_DATA_ID, id
+                )
+            )
+            .build()
+
         //Sets up the process sequence from the work manager instance
-        //Here it starts with FirstWorker, then SecondWorker
+        //Here it starts with FirstWorker, then SecondWorker, then ThirdWorker
         workManager.beginWith(firstRequest)
             .then(secondRequest)
+            .then(thirdRequest) // TAMBAHKAN thirdRequest ke rantai
             .enqueue()
 
         //Here we're observing the returned LiveData and getting the
-        //state result of the worker (Can be SUCCEEDED, FAILED, or CANCELLED)
-        //isFinished is used to check if the state is either SUCCEEDED or FAILED
+        //state result of the worker
         workManager.getWorkInfoByIdLiveData(firstRequest.id)
             .observe(this) { info ->
                 if (info?.state?.isFinished == true) {
@@ -101,13 +108,22 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-        // Last but not least, call the launchNotificationService method after your
-        // SecondWorker is done.
+        // MODIFIKASI: Panggil service saat worker 2 selesai
         workManager.getWorkInfoByIdLiveData(secondRequest.id)
             .observe(this) { info ->
                 if (info?.state?.isFinished == true) {
                     showResult("Second process is done")
-                    launchNotificationService()
+                    launchNotificationService() // Panggil service 1
+                }
+            }
+
+        // TAMBAHAN: Observer untuk ThirdWorker
+        // Panggil service 2 saat worker 3 selesai
+        workManager.getWorkInfoByIdLiveData(thirdRequest.id)
+            .observe(this) { info ->
+                if (info?.state?.isFinished == true) {
+                    showResult("Third process is done")
+                    launchSecondNotificationService() // Panggil service 2
                 }
             }
     }
@@ -127,14 +143,12 @@ class MainActivity : AppCompatActivity() {
     //Launch the NotificationService
     private fun launchNotificationService() {
         //Observe if the service process is done or not
-        //If it is, show a toast with the channel ID in it
         NotificationService.trackingCompletion.observe(
             this
         ) { Id ->
             showResult("Process for Notification Channel ID $Id is done!")
         }
         //Create an Intent to start the NotificationService
-        //An ID of "001" is also passed as the notification channel ID
         val serviceIntent = Intent(
             this,
             NotificationService::class.java
@@ -145,7 +159,28 @@ class MainActivity : AppCompatActivity() {
         ContextCompat.startForegroundService(this, serviceIntent)
     }
 
+    // TAMBAHAN: Fungsi untuk meluncurkan service kedua
+    private fun launchSecondNotificationService() {
+        //Observe if the service process is done or not
+        SecondNotificationService.trackingCompletion.observe(
+            this
+        ) { Id ->
+            showResult("Process for Notification Channel ID $Id is done!")
+        }
+        //Create an Intent to start the SecondNotificationService
+        val serviceIntent = Intent(
+            this,
+            SecondNotificationService::class.java // Ganti ke service 2
+        ).apply {
+            putExtra(EXTRA_ID_2, "002") // Ganti ID channel & key
+        }
+        //Start the foreground service through the Service Intent
+        ContextCompat.startForegroundService(this, serviceIntent)
+    }
+
+
     companion object {
         const val EXTRA_ID = "Id"
+        const val EXTRA_ID_2 = "Id2" // TAMBAHAN: Key untuk service 2
     }
 }
